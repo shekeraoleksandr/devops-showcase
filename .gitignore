@@ -27,3 +27,9 @@ obj/
 pkg/
 release/wi-kubernetes-manifests.yaml
 vendor/
+checkoutservice
+*.log
+productcatalogservice
+shippingservice
+*.rdb
+

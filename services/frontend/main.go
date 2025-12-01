@@ -21,7 +21,7 @@ import (
 	"os"
 	"time"
 
-	"cloud.google.com/go/profiler"
+	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -191,26 +191,15 @@ func initTracing(log logrus.FieldLogger, ctx context.Context, svc *frontendServe
 }
 
 func initProfiling(log logrus.FieldLogger, service, version string) {
-	// TODO(ahmetb) this method is duplicated in other microservices using Go
-	// since they are not sharing packages.
-	for i := 1; i <= 3; i++ {
-		log = log.WithField("retry", i)
-		if err := profiler.Start(profiler.Config{
-			Service:        service,
-			ServiceVersion: version,
-			// ProjectID must be set if not running on GCP.
-			// ProjectID: "my-project",
-		}); err != nil {
-			log.Warnf("warn: failed to start profiler: %+v", err)
-		} else {
-			log.Info("started Stackdriver profiler")
-			return
-		}
-		d := time.Second * 10 * time.Duration(i)
-		log.Debugf("sleeping %v to retry initializing Stackdriver profiler", d)
-		time.Sleep(d)
+	// Configure AWS X-Ray for tracing and profiling
+	err := xray.Configure(xray.Config{
+		ServiceVersion: version,
+	})
+	if err != nil {
+		log.Warnf("warn: failed to configure AWS X-Ray: %+v", err)
+		return
 	}
-	log.Warn("warning: could not initialize Stackdriver profiler after retrying, giving up")
+	log.Info("AWS X-Ray configured successfully")
 }
 
 func mustMapEnv(target *string, envKey string) {
