@@ -37,3 +37,30 @@ def send_confirmation_email(email, order):
 
 if __name__ == '__main__':
   logger.info('Client for email service.')
+
+  # Create a test order
+  test_order = demo_pb2.OrderResult(
+    order_id='test-order-123',
+    shipping_tracking_id='tracking-456',
+    shipping_cost=demo_pb2.Money(currency_code='USD', units=5, nanos=990000000),
+    shipping_address=demo_pb2.Address(
+      street_address='123 Main St',
+      city='San Francisco',
+      state='CA',
+      country='USA',
+      zip_code=94105
+    ),
+    items=[
+      demo_pb2.OrderItem(
+        item=demo_pb2.CartItem(
+          product_id='OLJCESPC7Z',
+          quantity=1
+        ),
+        cost=demo_pb2.Money(currency_code='USD', units=35, nanos=0)
+      )
+    ]
+  )
+
+  # Send test email
+  logger.info('Sending test order confirmation email...')
+  send_confirmation_email('test@example.com', test_order)

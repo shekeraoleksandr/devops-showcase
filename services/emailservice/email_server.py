@@ -22,8 +22,8 @@ import time
 import grpc
 import traceback
 from jinja2 import Environment, FileSystemLoader, select_autoescape, TemplateError
-from google.api_core.exceptions import GoogleAPICallError
-from google.auth.exceptions import DefaultCredentialsError
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
 
 import demo_pb2
 import demo_pb2_grpc
@@ -36,7 +36,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-import googlecloudprofiler
+from aws_xray_sdk.core import xray_recorder
 
 from logger import getJSONLogger
 logger = getJSONLogger('emailservice-server')
@@ -59,28 +59,40 @@ class BaseEmailService(demo_pb2_grpc.EmailServiceServicer):
 
 class EmailService(BaseEmailService):
   def __init__(self):
-    raise Exception('cloud mail client not implemented')
     super().__init__()
+    # Initialize AWS SES client
+    aws_region = os.environ.get('AWS_REGION', 'us-east-1')
+    self.ses_client = boto3.client('ses', region_name=aws_region)
+    # Get sender email from environment variable
+    self.sender_email = os.environ.get('SENDER_EMAIL', 'noreply@example.com')
 
-  @staticmethod
-  def send_email(client, email_address, content):
-    response = client.send_message(
-      sender = client.sender_path(project_id, region, sender_id),
-      envelope_from_authority = '',
-      header_from_authority = '',
-      envelope_from_address = from_address,
-      simple_message = {
-        "from": {
-          "address_spec": from_address,
+  def send_email(self, email_address, content):
+    """Send email using AWS SES"""
+    try:
+      response = self.ses_client.send_email(
+        Source=self.sender_email,
+        Destination={
+          'ToAddresses': [email_address]
         },
-        "to": [{
-          "address_spec": email_address
-        }],
-        "subject": "Your Confirmation Email",
-        "html_body": content
-      }
-    )
-    logger.info("Message sent: {}".format(response.rfc822_message_id))
+        Message={
+          'Subject': {
+            'Data': 'Your Order Confirmation',
+            'Charset': 'UTF-8'
+          },
+          'Body': {
+            'Html': {
+              'Data': content,
+              'Charset': 'UTF-8'
+            }
+          }
+        }
+      )
+      logger.info("Email sent to {} with MessageId: {}".format(
+        email_address, response['MessageId']))
+      return response
+    except ClientError as e:
+      logger.error("Failed to send email: {}".format(e.response['Error']['Message']))
+      raise
 
   def SendOrderConfirmation(self, request, context):
     email = request.email
@@ -90,15 +102,20 @@ class EmailService(BaseEmailService):
       confirmation = template.render(order = order)
     except TemplateError as err:
       context.set_details("An error occurred when preparing the confirmation mail.")
-      logger.error(err.message)
+      logger.error(str(err))
       context.set_code(grpc.StatusCode.INTERNAL)
       return demo_pb2.Empty()
 
     try:
-      EmailService.send_email(self.client, email, confirmation)
-    except GoogleAPICallError as err:
+      self.send_email(email, confirmation)
+    except ClientError as err:
       context.set_details("An error occurred when sending the email.")
-      print(err.message)
+      logger.error(str(err))
+      context.set_code(grpc.StatusCode.INTERNAL)
+      return demo_pb2.Empty()
+    except NoCredentialsError:
+      context.set_details("AWS credentials not configured.")
+      logger.error("AWS credentials not found")
       context.set_code(grpc.StatusCode.INTERNAL)
       return demo_pb2.Empty()
 
@@ -119,8 +136,10 @@ def start(dummy_mode):
   service = None
   if dummy_mode:
     service = DummyEmailService()
+    logger.info("Starting email service in DUMMY mode (emails will not be sent)")
   else:
-    raise Exception('non-dummy mode not implemented yet')
+    service = EmailService()
+    logger.info("Starting email service with AWS SES")
 
   demo_pb2_grpc.add_EmailServiceServicer_to_server(service, server)
   health_pb2_grpc.add_HealthServicer_to_server(service, server)
@@ -135,48 +154,43 @@ def start(dummy_mode):
   except KeyboardInterrupt:
     server.stop(0)
 
-def initStackdriverProfiling():
-  project_id = None
+def initAWSXRay():
+  """Initialize AWS X-Ray tracing"""
   try:
-    project_id = os.environ["GCP_PROJECT_ID"]
-  except KeyError:
-    # Environment variable not set
-    pass
-
-  for retry in range(1,4):
-    try:
-      if project_id:
-        googlecloudprofiler.start(service='email_server', service_version='1.0.0', verbose=0, project_id=project_id)
-      else:
-        googlecloudprofiler.start(service='email_server', service_version='1.0.0', verbose=0)
-      logger.info("Successfully started Stackdriver Profiler.")
-      return
-    except (BaseException) as exc:
-      logger.info("Unable to start Stackdriver Profiler Python agent. " + str(exc))
-      if (retry < 4):
-        logger.info("Sleeping %d to retry initializing Stackdriver Profiler"%(retry*10))
-        time.sleep (1)
-      else:
-        logger.warning("Could not initialize Stackdriver Profiler after retrying, giving up")
+    # Configure X-Ray recorder
+    xray_recorder.configure(
+      service='email_server',
+      sampling=True,
+      context_missing='LOG_ERROR'
+    )
+    logger.info("Successfully initialized AWS X-Ray.")
+  except Exception as exc:
+    logger.warning("Unable to initialize AWS X-Ray: " + str(exc))
   return
 
 
 if __name__ == '__main__':
-  logger.info('starting the email service in dummy mode.')
+  # Determine mode from environment variable
+  dummy_mode = os.environ.get('DUMMY_MODE', 'true').lower() == 'true'
 
-  # Profiler
+  if dummy_mode:
+    logger.info('starting the email service in dummy mode.')
+  else:
+    logger.info('starting the email service with AWS SES.')
+
+  # AWS X-Ray Profiler/Tracing
   try:
     if "DISABLE_PROFILER" in os.environ:
-      raise KeyError()
+      logger.info("AWS X-Ray disabled.")
     else:
-      logger.info("Profiler enabled.")
-      initStackdriverProfiling()
-  except KeyError:
-      logger.info("Profiler disabled.")
+      logger.info("AWS X-Ray enabled.")
+      initAWSXRay()
+  except Exception as e:
+      logger.info(f"AWS X-Ray initialization failed: {e}")
 
-  # Tracing
+  # OpenTelemetry Tracing
   try:
-    if os.environ["ENABLE_TRACING"] == "1":
+    if os.environ.get("ENABLE_TRACING") == "1":
       otel_endpoint = os.getenv("COLLECTOR_SERVICE_ADDR", "localhost:4317")
       trace.set_tracer_provider(TracerProvider())
       trace.get_tracer_provider().add_span_processor(
@@ -187,12 +201,13 @@ if __name__ == '__main__':
           )
         )
       )
+      logger.info("OpenTelemetry tracing enabled.")
     grpc_server_instrumentor = GrpcInstrumentorServer()
     grpc_server_instrumentor.instrument()
 
-  except (KeyError, DefaultCredentialsError):
-      logger.info("Tracing disabled.")
+  except KeyError:
+      logger.info("OpenTelemetry tracing disabled.")
   except Exception as e:
-      logger.warn(f"Exception on Cloud Trace setup: {traceback.format_exc()}, tracing disabled.") 
-  
-  start(dummy_mode = True)
+      logger.warning(f"Exception on tracing setup: {traceback.format_exc()}, tracing disabled.")
+
+  start(dummy_mode = dummy_mode)
