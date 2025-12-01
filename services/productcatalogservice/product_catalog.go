@@ -27,6 +27,7 @@ import (
 
 type productCatalog struct {
 	pb.UnimplementedProductCatalogServiceServer
+	healthpb.UnimplementedHealthServer
 	catalog pb.ListProductsResponse
 }
 
