@@ -25,17 +25,21 @@ const logger = pino({
   }
 });
 
+// AWS X-Ray Configuration
+const AWSXRay = require('aws-xray-sdk');
+
 if(process.env.DISABLE_PROFILER) {
-  logger.info("Profiler disabled.")
+  logger.info("AWS X-Ray disabled.")
 }
 else {
-  logger.info("Profiler enabled.")
-  require('@google-cloud/profiler').start({
-    serviceContext: {
-      service: 'currencyservice',
-      version: '1.0.0'
-    }
-  });
+  logger.info("AWS X-Ray enabled.")
+  try {
+    AWSXRay.config([AWSXRay.plugins.ECSPlugin]);
+    AWSXRay.middleware.enableDynamicNaming();
+    logger.info("AWS X-Ray initialized successfully.");
+  } catch (err) {
+    logger.warn(`AWS X-Ray initialization failed: ${err.message}`);
+  }
 }
 
 // Register GRPC OTel Instrumentation for trace propagation
@@ -186,10 +190,14 @@ function main () {
   server.addService(healthProto.Health.service, {check});
 
   server.bindAsync(
-    `[::]:${PORT}`,
+    `0.0.0.0:${PORT}`,
     grpc.ServerCredentials.createInsecure(),
-    function() {
-      logger.info(`CurrencyService gRPC server started on port ${PORT}`);
+    function(error, port) {
+      if (error) {
+        logger.error(`Failed to bind server: ${error.message}`);
+        throw error;
+      }
+      logger.info(`CurrencyService gRPC server started on port ${port}`);
       server.start();
     },
    );
