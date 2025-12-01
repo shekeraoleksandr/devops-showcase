@@ -18,16 +18,20 @@
 
 const logger = require('./logger')
 
+// AWS X-Ray Configuration
+const AWSXRay = require('aws-xray-sdk');
+
 if (process.env.DISABLE_PROFILER) {
-  logger.info("Profiler disabled.")
+  logger.info("AWS X-Ray disabled.")
 } else {
-  logger.info("Profiler enabled.")
-  require('@google-cloud/profiler').start({
-    serviceContext: {
-      service: 'paymentservice',
-      version: '1.0.0'
-    }
-  });
+  logger.info("AWS X-Ray enabled.")
+  try {
+    AWSXRay.config([AWSXRay.plugins.ECSPlugin]);
+    AWSXRay.middleware.enableDynamicNaming();
+    logger.info("AWS X-Ray initialized successfully.");
+  } catch (err) {
+    logger.warn(`AWS X-Ray initialization failed: ${err.message}`);
+  }
 }
 
 
