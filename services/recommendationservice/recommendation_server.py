@@ -20,8 +20,7 @@ import time
 import traceback
 from concurrent import futures
 
-import googlecloudprofiler
-from google.auth.exceptions import DefaultCredentialsError
+from aws_xray_sdk.core import xray_recorder
 import grpc
 
 import demo_pb2
@@ -38,29 +37,18 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from logger import getJSONLogger
 logger = getJSONLogger('recommendationservice-server')
 
-def initStackdriverProfiling():
-  project_id = None
+def initAWSXRay():
+  """Initialize AWS X-Ray tracing"""
   try:
-    project_id = os.environ["GCP_PROJECT_ID"]
-  except KeyError:
-    # Environment variable not set
-    pass
-
-  for retry in range(1,4):
-    try:
-      if project_id:
-        googlecloudprofiler.start(service='recommendation_server', service_version='1.0.0', verbose=0, project_id=project_id)
-      else:
-        googlecloudprofiler.start(service='recommendation_server', service_version='1.0.0', verbose=0)
-      logger.info("Successfully started Stackdriver Profiler.")
-      return
-    except (BaseException) as exc:
-      logger.info("Unable to start Stackdriver Profiler Python agent. " + str(exc))
-      if (retry < 4):
-        logger.info("Sleeping %d seconds to retry Stackdriver Profiler agent initialization"%(retry*10))
-        time.sleep (1)
-      else:
-        logger.warning("Could not initialize Stackdriver Profiler after retrying, giving up")
+    # Configure X-Ray recorder
+    xray_recorder.configure(
+      service='recommendation_server',
+      sampling=True,
+      context_missing='LOG_ERROR'
+    )
+    logger.info("Successfully initialized AWS X-Ray.")
+  except Exception as exc:
+    logger.warning("Unable to initialize AWS X-Ray: " + str(exc))
   return
 
 class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
@@ -98,10 +86,10 @@ if __name__ == "__main__":
       if "DISABLE_PROFILER" in os.environ:
         raise KeyError()
       else:
-        logger.info("Profiler enabled.")
-        initStackdriverProfiling()
+        logger.info("AWS X-Ray enabled.")
+        initAWSXRay()
     except KeyError:
-        logger.info("Profiler disabled.")
+        logger.info("AWS X-Ray disabled.")
 
     try:
       grpc_client_instrumentor = GrpcInstrumentorClient()
@@ -119,10 +107,10 @@ if __name__ == "__main__":
             )
           )
         )
-    except (KeyError, DefaultCredentialsError):
+    except KeyError:
         logger.info("Tracing disabled.")
     except Exception as e:
-        logger.warn(f"Exception on Cloud Trace setup: {traceback.format_exc()}, tracing disabled.") 
+        logger.warning(f"Exception on tracing setup: {traceback.format_exc()}, tracing disabled.") 
 
     port = os.environ.get('PORT', "8080")
     catalog_addr = os.environ.get('PRODUCT_CATALOG_SERVICE_ADDR', '')
