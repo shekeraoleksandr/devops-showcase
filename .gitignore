@@ -32,4 +32,5 @@ checkoutservice
 productcatalogservice
 shippingservice
 *.rdb
+services/frontend/frontend
 
