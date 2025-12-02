@@ -56,7 +56,7 @@ wait_for_service 7001 "Currency Service"
 # 3. Start Cart Service (C#/.NET) - Port 5000
 echo -e "\n${YELLOW}[3/9] Starting Cart Service...${NC}"
 cd "$BASE_DIR/cartservice/src"
-dotnet run > "$LOG_DIR/cart.log" 2>&1 &
+REDIS_ADDR=localhost:6379 dotnet run > "$LOG_DIR/cart.log" 2>&1 &
 wait_for_service 5000 "Cart Service"
 
 # 4. Start Shipping Service (Go) - Port 50051
