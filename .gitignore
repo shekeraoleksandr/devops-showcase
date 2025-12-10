@@ -29,7 +29,7 @@ release/wi-kubernetes-manifests.yaml
 vendor/
 services/checkoutservice/checkoutservice
 *.log
-productcatalogservice
+services/productcatalogservice/productcatalogservice
 shippingservice
 *.rdb
 services/frontend/frontend
