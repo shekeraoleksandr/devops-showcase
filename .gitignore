@@ -30,7 +30,7 @@ vendor/
 services/checkoutservice/checkoutservice
 *.log
 services/productcatalogservice/productcatalogservice
-shippingservice
+services/shippingservice/shippingservice
 *.rdb
 services/frontend/frontend
 
