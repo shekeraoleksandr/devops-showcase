@@ -20,12 +20,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
 
   # Backend Services
   adservice:
@@ -38,12 +32,6 @@ services:
     networks:
       - backend-network
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   cartservice:
     build: ./services/cartservice/src
@@ -59,18 +47,12 @@ services:
       redis-cart:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   checkoutservice:
     build: ./services/checkoutservice
     container_name: checkoutservice
     ports:
-      - "5050"
+      - "5050:5050"
     environment:
       - PORT=5050
       - PRODUCT_CATALOG_SERVICE_ADDR=productcatalogservice:3550
@@ -89,86 +71,56 @@ services:
       - currencyservice
       - cartservice
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   currencyservice:
     build: ./services/currencyservice
     container_name: currencyservice
     ports:
-      - "7000"
+      - "7001:7000"
     environment:
       - PORT=7000
     networks:
       - backend-network
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   emailservice:
     build: ./services/emailservice
     container_name: emailservice
     ports:
-      - "5000"
+      - "5001:5000"
     environment:
       - PORT=5000
     networks:
       - backend-network
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
 
   paymentservice:
     build: ./services/paymentservice
     container_name: paymentservice
     ports:
-      - "50051"
+      - "50052:50051"
     environment:
       - PORT=50051
     networks:
       - backend-network
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   productcatalogservice:
     build: ./services/productcatalogservice
     container_name: productcatalogservice
     ports:
-      - "3550"
+      - "3550:3550"
     environment:
       - PORT=3550
     networks:
       - backend-network
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   recommendationservice:
     build: ./services/recommendationservice
     container_name: recommendationservice
     ports:
-      - "8081"
+      - "8081:8081"
     environment:
       - PORT=8081
       - PRODUCT_CATALOG_SERVICE_ADDR=productcatalogservice:3550
@@ -177,29 +129,17 @@ services:
     depends_on:
       - productcatalogservice
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   shippingservice:
     build: ./services/shippingservice
     container_name: shippingservice
     ports:
-      - "50051"
+      - "50051:50051"
     environment:
       - PORT=50051
     networks:
       - backend-network
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
 
   # Frontend Service
   frontend:
@@ -229,9 +169,3 @@ services:
       - checkoutservice
       - adservice
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
